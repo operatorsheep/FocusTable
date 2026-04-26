@@ -50,6 +50,9 @@ namespace FocusTable
         // Notes keyed by vessel GUID
         private Dictionary<string, string> _vesselNotes = new Dictionary<string, string>();
 
+        // Deferred action — executed after DrawWindow returns, avoids modifying _entries mid-foreach
+        private Action _deferredAction = null;
+
         // Context menu
         private bool        _contextMenuOpen = false;
         private VesselEntry _contextMenuEntry;
@@ -557,6 +560,12 @@ namespace FocusTable
 
             HandleResize();
 
+            if (_deferredAction != null)
+            {
+                _deferredAction();
+                _deferredAction = null;
+            }
+
             // Dismiss context menu on left-click outside it
             if (_contextMenuOpen && Event.current.type == EventType.MouseDown && Event.current.button == 0
                 && !_contextMenuRect.Contains(Event.current.mousePosition))
@@ -761,10 +770,10 @@ namespace FocusTable
                         var av = FlightGlobals.ActiveVessel;
                         if (av != null)
                         {
-                            av.targetObject = entry.IsTargeted ? null :
-                                              entry.Vessel != null ? (ITargetable)entry.Vessel :
-                                              entry.Body;
-                            RefreshEntries();
+                            ITargetable newTarget = entry.IsTargeted ? null :
+                                                    entry.Vessel != null ? (ITargetable)entry.Vessel :
+                                                    (ITargetable)entry.Body;
+                            _deferredAction = () => { av.targetObject = newTarget; RefreshEntries(); };
                         }
                     }
                 }
@@ -777,7 +786,10 @@ namespace FocusTable
                 if (hasVessel && !entry.IsActive)
                 {
                     if (GUILayout.Button("Ctl", GUILayout.Width(28)))
-                        ControlVessel(entry.Vessel);
+                    {
+                        var v = entry.Vessel;
+                        _deferredAction = () => ControlVessel(v);
+                    }
                 }
                 else
                 {
